@@ -35,7 +35,7 @@
  */
 final class BrainLock
 {
-    public const VERSION = '0.1.0';
+    public const VERSION = '0.4.0';
 
     /** Default origin of the BrainLock service. */
     private const DEFAULT_API_BASE = 'https://brainlock.id';
@@ -90,20 +90,23 @@ final class BrainLock
         }
 
         // Transport mode.
-        //   'iframe'   — default. Render the BrainLock UI as a full-viewport
-        //                iframe over the partner page. By default the SDK
-        //                uses the SAME-ORIGIN PROXY transport: the iframe
-        //                loads from a path on YOUR own server (default
-        //                /_bl/auth/<sid>) which transparently proxies to
-        //                brainlock.id. Because the iframe is same-site as
-        //                your top-level page, cookies behave as first-party.
-        //                Works on every browser including Safari. You
-        //                must mount BrainLock::handleEmbed() at the
-        //                configured `embed_path` (see below).
-        //   'redirect' — full-page navigation to brainlock.id and back.
-        //                Works everywhere with zero server-side mounting.
-        //                Use if you don't want to mount the embed proxy.
-        $mode = $config['mode'] ?? 'iframe';
+        //   'redirect' — DEFAULT. Full-page navigation to brainlock.id and
+        //                back. Same browser window throughout. Works in
+        //                every browser, zero setup, full session/device/
+        //                biometric continuity for returning users. The
+        //                "Sign in with Google"-style pattern that the
+        //                whole industry settled on for good reasons.
+        //                Pick this unless you have a specific reason not to.
+        //   'iframe'   — EXPERIMENTAL. Render the BrainLock UI as a
+        //                full-viewport iframe over the partner page via
+        //                the SAME-ORIGIN PROXY transport (BrainLock::
+        //                handleEmbed mounted at embed_path). Looks
+        //                slicker for the *first* sign-in on a specific
+        //                partner site, but breaks the cross-site SSO
+        //                story (each partner gets its own partitioned
+        //                BrainLock session). Use only if you understand
+        //                the tradeoff. See docs/CONNECT_TRANSPORTS.md.
+        $mode = $config['mode'] ?? 'redirect';
         if (!\in_array($mode, ['iframe', 'redirect'], true)) {
             throw new \InvalidArgumentException('BrainLock: mode must be "iframe" or "redirect".');
         }
@@ -208,7 +211,7 @@ final class BrainLock
 
         $ch = \curl_init();
         \curl_setopt_array($ch, [
-            CURLOPT_URL            => self::insertProxyBaseQuery($upstreamURL, $prefix),
+            CURLOPT_URL            => $upstreamURL,
             CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_HTTPHEADER     => $fwdHeaders,
             CURLOPT_FOLLOWLOCATION => false,
@@ -265,12 +268,28 @@ final class BrainLock
 
         // HTML responses get root-relative href/src/action attributes
         // prefixed with the proxy path so assets resolve through the
-        // proxy. Skipping inline strings ('/api/...' inside JS) — those
-        // are handled by the BrainLock-side fetch/XHR monkey-patch.
+        // proxy. CSS responses get url(/...) rewriting for the same
+        // reason (icons referenced via background-image). Inline JS
+        // strings ('/api/...' inside JS) are NOT rewritten here — they
+        // get the BrainLock-side fetch/XHR/script monkey-patch.
         if (\strpos($contentType, 'text/html') !== false) {
             $bodyRaw = self::rewriteHTMLPaths($bodyRaw, $prefix);
+        } elseif (\strpos($contentType, 'text/css') !== false) {
+            $bodyRaw = self::rewriteCSSPaths($bodyRaw, $prefix);
         }
         echo $bodyRaw;
+    }
+
+    /**
+     * Prefix root-relative URLs inside CSS `url(/...)` references.
+     */
+    private static function rewriteCSSPaths(string $css, string $prefix): string
+    {
+        return \preg_replace(
+            '#\burl\(\s*(["\']?)/(?!/|' . \preg_quote(\ltrim($prefix, '/'), '#') . '/)#i',
+            'url($1' . $prefix . '/',
+            $css
+        ) ?? $css;
     }
 
     /**
@@ -288,15 +307,6 @@ final class BrainLock
         ) ?? $html;
     }
 
-    /**
-     * Add ?proxy_base=<prefix> to the upstream URL so brainlock-go knows
-     * to emit absolute asset URLs + inject window.BL_API_BASE.
-     */
-    private static function insertProxyBaseQuery(string $url, string $prefix): string
-    {
-        $sep = (\strpos($url, '?') === false) ? '?' : '&';
-        return $url . $sep . 'proxy_base=' . \urlencode($prefix);
-    }
 
     /**
      * Start an auth session and RETURN the URL data without emitting any

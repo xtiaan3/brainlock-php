@@ -34,16 +34,23 @@ $identity = BrainLock::verify($_GET['token']);
 
 The signature is locked. The implementation underneath will evolve until `v1.0`.
 
-## Transport modes
+## How it works
 
-The SDK picks the right cross-origin transport for each user automatically. You don't need to write any client-side JS or detect browser versions.
+`connect()` issues a 302 redirect to `brainlock.id/auth/<session>`. The user completes the sign-in ceremony on brainlock.id in the same browser window — real address bar, no popup, no iframe. BrainLock then redirects the browser back to your `callback_url` with `?token=<JWT>`. Your callback calls `verify()` to validate the token and extract the identity.
 
-| Mode         | What it does                                                                                        |
-|--------------|-----------------------------------------------------------------------------------------------------|
-| `iframe` (default) | BrainLock UI loads in a full-viewport iframe over your page. Modern browsers (Safari 18.2+, Chrome 118+, Firefox 130+, Edge 118+) get this. The bundled launcher does a capability check and silently falls back to `redirect` for older browsers. |
-| `redirect`   | Classic full-page navigation to brainlock.id and back. Works everywhere. Use this explicitly if you'd rather not have the in-page iframe.                |
+Exactly the shape of "Sign in with Google" / Apple / Microsoft.
 
-Set it via `BrainLock::configure(['mode' => 'redirect', ...])` to force one. Otherwise we pick `iframe` and you get the best experience the user's browser can support.
+### Cross-site SSO is free
+
+Once a user has signed in via BrainLock anywhere on a device — direct on brainlock.id, or through any partner — every subsequent BrainLock sign-in on the same device **flashes through in ~600ms** with a consent moment instead of a fresh ceremony. The brainlock.id session cookie set during step one carries across every other "Sign in with BrainLock" integration automatically. Zero extra wiring on your side.
+
+### Trusted-device + biometric shortcut works automatically
+
+If the user has enrolled biometrics on a trusted device, BrainLock recognizes the device when they hit the sign-in page and offers a one-tap "Sign in with biometrics" alternative. This applies to your partner integration with zero work from you — your users get the polish you'd otherwise have to build yourself.
+
+### Experimental: iframe transport
+
+There's also a `mode: 'iframe'` option that loads the BrainLock UI in a same-origin iframe via a server-side proxy. It looks slicker for first-time sign-in but **breaks cross-site SSO** (each partner gets a partitioned BrainLock session that doesn't transfer) and **defeats the trusted-device + biometric shortcut**. We don't recommend it. Full tradeoffs in [brainlock-go/docs/CONNECT_TRANSPORTS.md](https://github.com/xtiaan3/brainlock-go/blob/main/docs/CONNECT_TRANSPORTS.md).
 
 ## What BrainLock Connect always returns
 
