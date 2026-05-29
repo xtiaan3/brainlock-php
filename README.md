@@ -34,6 +34,17 @@ $identity = BrainLock::verify($_GET['token']);
 
 The signature is locked. The implementation underneath will evolve until `v1.0`.
 
+## Transport modes
+
+The SDK picks the right cross-origin transport for each user automatically. You don't need to write any client-side JS or detect browser versions.
+
+| Mode         | What it does                                                                                        |
+|--------------|-----------------------------------------------------------------------------------------------------|
+| `iframe` (default) | BrainLock UI loads in a full-viewport iframe over your page. Modern browsers (Safari 18.2+, Chrome 118+, Firefox 130+, Edge 118+) get this. The bundled launcher does a capability check and silently falls back to `redirect` for older browsers. |
+| `redirect`   | Classic full-page navigation to brainlock.id and back. Works everywhere. Use this explicitly if you'd rather not have the in-page iframe.                |
+
+Set it via `BrainLock::configure(['mode' => 'redirect', ...])` to force one. Otherwise we pick `iframe` and you get the best experience the user's browser can support.
+
 ## What BrainLock Connect always returns
 
 Every successful sign-in returns the same fixed identity bundle:
