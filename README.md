@@ -4,6 +4,18 @@ Official PHP SDK for [BrainLock](https://brainlock.id) — memory-based identity
 
 > **Status: pre-release.** API surface is stable for Connect (`v0.4.0`+) and Verify (`v0.5.0`+). Watch for the `v1.0` tag.
 
+## How BrainLock works with your site
+
+**BrainLock is not a live dependency for your site.** Every exchange across the boundary is a one-shot handoff at a ceremony moment; outside those moments your site runs without touching BrainLock. The SDK reflects that — the call surface is `configure()` + the four ceremony methods (`connect`, `verifyConnectToken`, `verifyAction`, `verifyActionToken`) and nothing else.
+
+Specifically:
+
+- **No `appInfo()` / no asset puller.** The logo and icon you upload at `brainlock.id/developer/apps` are used **only** to render BrainLock's consent chrome during a ceremony. There is no method to fetch them back. Your site hosts its own brand assets on your own infrastructure — same file lives in two places by design.
+- **No `syncIdentity()` / no profile refresh.** After Connect hands you the user's identity bundle once, your app owns the copy. The user changes their display name *in your app*; you never round-trip to BrainLock for it. The avatar specifically is a 1h presigned URL — download once, host locally, ignore subsequent re-issues. See [Avatar handoff](https://brainlock.id/developer/docs/api-v1#avatar-handoff) for the partner-side download-once pattern.
+- **If BrainLock is down, your site stays up.** If you delete your app from the dev portal, your site's chrome stays branded. The architecture explicitly avoids coupled state.
+
+If you find yourself reaching for a "refresh from BrainLock" pattern in your render path, you've drifted into the OAuth-with-sync mental model — that's not how BrainLock works.
+
 ## Two products on one SDK
 
 BrainLock ships as two distinct products that share the same protocol primitives:
@@ -58,9 +70,9 @@ try {
 
 // $identity = [
 //     'sub'             => '...',                        // BL user id (rotates — use email as your dedupe key)
-//     'first_name'      => 'Christiaan',
-//     'last_name'       => 'Rendle',
-//     'email'           => 'c@example.com',
+//     'first_name'      => 'Tim',
+//     'last_name'       => 'Apple',
+//     'email'           => 'tim.apple@example.com',
 //     'picture'         => 'https://...',                // one-shot presigned URL; download once
 //     'verification_id' => 'verif_01J6XK...',            // audit-log id — store it
 //     'verified'        => true,
@@ -76,14 +88,30 @@ BrainLock::verifyAction([
     'user_id' => $currentUser->id,
     'action'  => 'transfer_funds',
     'context' => [
+        // ─── Consent panel content (all three keys are optional) ───────────
+        // Treat these as user-facing copy: they're what the user reads on
+        // BrainLock's consent panel before tapping AUTHORIZE. Omit a key
+        // and BrainLock fills in a generic default — the ceremony still
+        // works, but the user loses the chance to spot a typo'd amount or
+        // wrong recipient. Full guidance: API_V1.md "Consent panel content".
+        'title'       => 'Send $5,000.00',
+        'description' => "You're sending money to Tim Apple via TangoCash.",
+        'display'     => [
+            ['label' => 'Amount',    'value' => '$5,000.00'],
+            ['label' => 'Recipient', 'value' => 'tim.apple@example.com'],
+        ],
+        // ─── Receipt-only data — these pass through to your callback JWT
+        //     unchanged. Use for your downstream code, not the consent UI. ─
         'amount_cents' => 500000,
         'currency'     => 'USD',
-        'recipient'    => 'alice@example.com',
+        'recipient'    => 'tim.apple@example.com',
     ],
     'security_level' => 'elevated',
 ]);
 // Never reached — verifyAction() redirects and exits.
 ```
+
+> **Guidance on `context`:** every key is optional. If you omit `title` / `description` (or pass empty strings), BrainLock fills in generic defaults (`BrainLock Verify` / `You're verifying an action with <YourAppName>.`). `display` has no fallback — provide rows or none render. Aim for 1–3 display rows of the high-signal facts the user should verify (amount, recipient, destination). 5+ rows is a smell — summarize in `description` instead. Full philosophy + worked examples: [API reference → Consent panel content](https://brainlock.id/developer/docs/api-v1#consent-panel).
 
 ```php
 // In your callback handler:
@@ -134,7 +162,6 @@ A `mode: 'iframe'` option in `configure()` loads the Connect UI in a same-origin
 |---|---|
 | `BrainLock::configure(array $config)` | One-time setup; required before any other call. |
 | `BrainLock::connect(array $opts)` | Kick off a Connect sign-in. Redirects and exits. |
-| `BrainLock::startSession(array $opts)` | Lower-level: create a Connect session, return its `redirect_url`. Use when you want to drive the redirect yourself. |
 | `BrainLock::verifyConnectToken(string $token)` | Validate a Connect callback JWT. Returns the identity bundle. |
 | `BrainLock::verifyAction(array $opts)` | Kick off a Verify approval. Redirects and exits. |
 | `BrainLock::verifyActionToken(string $token)` | Validate a Verify callback JWT. Returns the action receipt. |
