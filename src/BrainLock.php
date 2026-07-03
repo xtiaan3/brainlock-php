@@ -41,8 +41,7 @@
  *     require 'BrainLock.php';
  *
  *     BrainLock::configure([
- *         'api_key'      => $_ENV['BRAINLOCK_API_KEY'],
- *         'callback_url' => 'https://yourapp.com/auth/callback',
+ *         'api_key' => $_ENV['BRAINLOCK_API_KEY'],
  *     ]);
  *
  *     BrainLock::connect(['user_id' => session_id()]);
@@ -139,16 +138,20 @@ final class BrainLock
      * Configure the SDK. Call once per request, before connect() or verify().
      *
      * Required:
-     *   api_key      — your developer API key (bl_live_… or bl_test_…)
-     *   callback_url — the URL on YOUR app where BrainLock will redirect after
-     *                  a successful sign-in. Must be HTTPS and pre-registered
-     *                  at brainlock.id/developer.
+     *   api_key  — your developer API key (bl_live_… or bl_test_…)
      *
      * Optional:
-     *   api_base     — defaults to https://brainlock.id. Override for testing.
-     *   mode         — 'redirect' (default) or 'iframe'. Verify is always
-     *                  redirect regardless of this setting. See connect() for
-     *                  the Connect-side difference.
+     *   api_base — defaults to https://brainlock.id. Override for testing.
+     *   mode     — 'redirect' (default) or 'iframe'. Verify is always
+     *              redirect regardless of this setting. See connect()
+     *              for the Connect-side difference.
+     *
+     * Note: callback_url used to live here. It no longer does — the
+     * URL is registered ONCE at brainlock.id/developer and looked up
+     * server-side per session-create call via the API key. Keeping
+     * it in application config invited drift (typos, dev/prod
+     * mismatches, stale values across deploys). One source of truth
+     * now: the developer portal.
      *
      * @throws InvalidArgumentException on bad config.
      */
@@ -159,16 +162,6 @@ final class BrainLock
         }
         if (!\preg_match('/^bl_(live|test)_[a-f0-9]+$/', $config['api_key'])) {
             throw new \InvalidArgumentException('BrainLock: api_key must look like "bl_live_…" or "bl_test_…".');
-        }
-        if (empty($config['callback_url']) || !\is_string($config['callback_url'])) {
-            throw new \InvalidArgumentException('BrainLock: callback_url is required.');
-        }
-        $parsed = \parse_url($config['callback_url']);
-        if (!$parsed || empty($parsed['scheme']) || empty($parsed['host'])) {
-            throw new \InvalidArgumentException('BrainLock: callback_url is not a valid URL.');
-        }
-        if ($parsed['scheme'] !== 'https' && $parsed['host'] !== 'localhost') {
-            throw new \InvalidArgumentException('BrainLock: callback_url must be https:// (or http://localhost for development).');
         }
 
         // Transport mode.
@@ -203,11 +196,10 @@ final class BrainLock
         }
 
         self::$config = [
-            'api_key'      => $config['api_key'],
-            'callback_url' => $config['callback_url'],
-            'api_base'     => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
-            'mode'         => $mode,
-            'embed_path'   => $embedPath,
+            'api_key'    => $config['api_key'],
+            'api_base'   => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
+            'mode'       => $mode,
+            'embed_path' => $embedPath,
         ];
     }
 
@@ -414,7 +406,6 @@ final class BrainLock
             self::$config['api_base'] . '/v1/auth/session',
             [
                 'user_id'        => $opts['user_id'],
-                'callback_url'   => self::$config['callback_url'],
                 'security_level' => $level,
                 'state'          => $state,
                 'require_geo'    => !empty($opts['require_geo']),
@@ -466,8 +457,9 @@ final class BrainLock
      *
      * Side effects (redirect mode, default):
      *   Sends a 302 to brainlock.id/auth/<sid>. The user leaves your domain
-     *   for the ceremony; BrainLock redirects them back to your callback_url
-     *   with the result in the query string.
+     *   for the ceremony; BrainLock redirects them back to the callback URL
+     *   registered on your app (see brainlock.id/developer) with the result
+     *   in the query string.
      *
      * Side effects (iframe mode):
      *   Emits a launcher page that runs a capability check and either opens
@@ -500,7 +492,6 @@ final class BrainLock
             self::$config['api_base'] . '/v1/auth/session',
             [
                 'user_id'        => $opts['user_id'],
-                'callback_url'   => self::$config['callback_url'],
                 'security_level' => $level,
                 'state'          => $state,
                 'require_geo'    => !empty($opts['require_geo']),
@@ -668,7 +659,6 @@ final class BrainLock
 
         $payload = [
             'user_id'        => $opts['user_id'],
-            'callback_url'   => self::$config['callback_url'],
             'intent'         => 'verify',
             'action'         => $opts['action'],
             'security_level' => $level,
