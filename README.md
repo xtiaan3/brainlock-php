@@ -69,7 +69,7 @@ try {
 }
 
 // $identity = [
-//     'sub'             => '...',                        // BL user id (rotates — use email as your dedupe key)
+//     'sub'             => 'blsub_...',                   // stable pairwise-per-app subject — YOUR account key
 //     'first_name'      => 'Tim',
 //     'last_name'       => 'Apple',
 //     'email'           => 'tim.apple@example.com',
